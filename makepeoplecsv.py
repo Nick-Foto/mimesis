@@ -1,49 +1,23 @@
 from faker import Faker
-import dask.bag as db
 import numpy as np
 import dask.array as da
-import random
 import dask
-from mimesis.schema import Field, Schema
-from dask.base import tokenize
 import sys
-
-
-def make_people(npartitions, records_per_partition, seed=None, locale="en"):
-    schema = lambda field: {
-        "first_name": field("person.first_name"),
-        "last_name": field("person.last_name"),
-        "address": field("address.address")+" "+field("address.city")
-        }
-    return _make_mimesis( {"locale": locale}, schema, npartitions, records_per_partition, seed  )
-
-def _generate_mimesis(field, schema_description, records_per_partition, seed):
-    field = Field(seed=seed, **field)
-    schema = Schema(schema=lambda: schema_description(field))
-    for i in range(records_per_partition):
-        yield schema.create(iterations=1)[0]
-
-def _make_mimesis(field, schema, npartitions, records_per_partition, seed=None):
-    field = field or {}
-    random_state = random.Random(seed)
-    seeds = [random_state.randint(0, 1 << 32) for _ in range(npartitions)]
-    name = "mimesis-" + tokenize( field, schema, npartitions, records_per_partition, seed    )
-    dsk = { (name, i): (_generate_mimesis, field, schema, records_per_partition, seed) for i, seed in enumerate(seeds)   }
-    return db.Bag(dsk, name, npartitions)
+from mygenerator import *
 
 def get_birthdate(n):
+    # This function generates "date_of_birth" field because mimesis doesn't include this field
     return np.array([fake.date_of_birth() for i in range(n)])
-
-
 
 if __name__ == "__main__":
     
+    #initialising global variables
     npart=100
     n_records=50000
     outputfilename = 'people.csv'
     records_per_part = 0
 
-    #Read command line arguments, initialise globale variables
+    #Read command line arguments, set globale variables
     nargs = len(sys.argv)
     if nargs <3 :
         print("Format  : python makepeoplecsv.py numberofrecords outputfilename")
@@ -67,6 +41,7 @@ if __name__ == "__main__":
     
     #Make_people returns a dask bag including "first_name", "last_name" and "address" columns
     bag_people=make_people(npart, records_per_part)
+    #convert dask bag to dask dataframe
     df_people = bag_people.to_dataframe()
     
     #Make "date_of_birth" column and create a dask array

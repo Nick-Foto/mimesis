@@ -1,37 +1,15 @@
 import dask.dataframe as dd
-from dask.base import tokenize
-from mimesis.schema import Field, Schema
-import random
-import dask.bag as db
 import sys
-
-def make_people(npartitions, records_per_partition, seed=None, locale="en"):
-    schema = lambda field: {
-        "first_name": field("person.first_name"),
-        "last_name": field("person.last_name"),
-        "address": field("address.address")+" "+field("address.city")
-        }
-    return _make_mimesis( {"locale": locale}, schema, npartitions, records_per_partition, seed  )
-
-def _generate_mimesis(field, schema_description, records_per_partition, seed):
-    field = Field(seed=seed, **field)
-    schema = Schema(schema=lambda: schema_description(field))
-    for i in range(records_per_partition):
-        yield schema.create(iterations=1)[0]
-
-def _make_mimesis(field, schema, npartitions, records_per_partition, seed=None):
-    field = field or {}
-    random_state = random.Random(seed)
-    seeds = [random_state.randint(0, 1 << 32) for _ in range(npartitions)]
-    name = "mimesis-" + tokenize( field, schema, npartitions, records_per_partition, seed    )
-    dsk = { (name, i): (_generate_mimesis, field, schema, records_per_partition, seed) for i, seed in enumerate(seeds)   }
-    return db.Bag(dsk, name, npartitions)
+from mygenerator import *
 
 
 if __name__ == '__main__':
 
+    #initialising global variables
     npart=100
     inputfilename = 'people.csv'
+    
+    #Read command line arguments, set globale variables
     nargs = len(sys.argv)
     if nargs <2 :
         print("Format  : python anonpeoplecsv.py inputfilename")
@@ -41,22 +19,30 @@ if __name__ == '__main__':
 
     print("Initialising .... ")
 
+    #Read main csv file and store its data in a dask dataframe
     df_people= dd.read_csv(inputfilename, usecols=['first_name','last_name','address','date_of_birth'])
     df_people.repartition(npart)
 
+    #Extract fourth field "date_of_birth" from dataframe and store it in a dask array
     arr_birthdate = df_people.to_dask_array(lengths=True)[:,3]
 
+    #Calculate number of records and number of records per partition
     n_records=arr_birthdate.shape[0]
-
     records_per_part= n_records // npart
 
+    #Make_people returns a dask bag including "first_name", "last_name" and "address" columns
     bag_fake=make_people(npart, records_per_part)
+    #convert dask bag to dask dataframe
     df_fake = bag_fake.to_dataframe()
 
+    #Set number of chunks of fourth column and add it to main dataframe
     arr_birthdate = arr_birthdate.rechunk(records_per_part)
     df_fake['date_of_birth']=arr_birthdate
 
+    #create outputfilename from inputfilename
     outputfilename = inputfilename.split('.')[0]+'faked.csv'
     print("Running .... ")
+
+    # Compute dask delayed calculations and write to csv file
     df_fake.compute().to_csv(outputfilename, index=False)
     print(f"File with anonymised fields {outputfilename}  has been created with {n_records} records in the current directory")
