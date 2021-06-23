@@ -1,7 +1,7 @@
 import dask.dataframe as dd
 import sys
 from mygenerator import *
-
+import os
 
 if __name__ == '__main__':
 
@@ -17,6 +17,9 @@ if __name__ == '__main__':
     if nargs >=2 :
         inputfilename = sys.argv[1]
 
+    if not os.path.isfile(inputfilename):
+        print(f"The input file {inputfilename} doesn't exist.")
+        sys.exit()
     print("Initialising .... ")
 
     #Read main csv file and store its data in a dask dataframe
